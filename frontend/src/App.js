@@ -9,10 +9,11 @@ function App() {
   const [chartData, setChartData] = useState([]);
   const [coinData, setCoinData] = useState(null);
 
-  const handleNewSearch = (data, chart) => {
+  // Recibe data (última consulta con histórico incluido) y updatedHistory (historial completo desde la API)
+  const handleNewSearch = (data, updatedHistory) => {
     setCoinData(data);
-    setChartData(chart);
-    setHistory((prev) => [...prev, data]);
+    setChartData(data.history || []); // ahora usamos el histórico real de la API
+    setHistory(updatedHistory);       // historial oficial desde la DB
   };
 
   return (

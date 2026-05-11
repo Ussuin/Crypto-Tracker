@@ -1,23 +1,26 @@
 import React, { useState } from "react";
 import { TextField, Button, Paper, Typography, Container } from "@mui/material";
-import api from "../api";
+import api from "../api"; // tu api.js con getPrice y getHistory
 
 const Inicio = ({ onSearch, coinData }) => {
   const [symbol, setSymbol] = useState("");
 
+  // 🔎 handleSearch corregido
   const handleSearch = async () => {
     try {
-      const data = await api.getPrices(symbol);
-      const chart = await api.getHistory(symbol); // histórico para gráfica
-      onSearch(data, chart);
+      const cleanSymbol = symbol.trim().toUpperCase();
+      const data = await api.getPrice(cleanSymbol); // precio real desde backend
+      const updatedHistory = await api.getHistory(); // historial desde DB
+
+      onSearch(data, updatedHistory); // pasa datos al padre
     } catch (err) {
-      console.error("Error:", err);
+      console.error("Error en handleSearch:", err.message);
+      alert(err.message);
     }
   };
 
   return (
     <Container maxWidth="md" sx={{ textAlign: "center", mt: 5 }}>
-
       <Paper sx={{ p: 3 }}>
         <Typography variant="h6">Criptomoneda</Typography>
         <TextField

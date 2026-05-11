@@ -33,11 +33,11 @@ const PriceChart = ({ data }) => {
   }
 
   const chartData = {
-    labels: data.map((d) => d.date),
+    labels: data.map((d) => d.date), // fechas del histórico
     datasets: [
       {
         label: "Precio USD",
-        data: data.map((d) => d.price),
+        data: data.map((d) => d.price), // precios de cierre
         borderColor: "#00ff88",
         backgroundColor: "rgba(0,255,136,0.2)",
         fill: true,
@@ -49,13 +49,34 @@ const PriceChart = ({ data }) => {
   const options = {
     responsive: true,
     plugins: {
-      legend: { position: "top" },
-      title: { display: true, text: "Evolución de precios" },
+      legend: {
+        labels: { color: "#fff" },
+        position: "top",
+      },
+      title: {
+        display: true,
+        text: "Evolución de precios (últimos 7 días)",
+        color: "#00ff88",
+      },
+      tooltip: {
+        callbacks: {
+          label: (context) => `$${context.raw.toFixed(4)} USD`,
+        },
+      },
+    },
+    scales: {
+      x: {
+        ticks: { color: "#fff" },
+      },
+      y: {
+        ticks: { color: "#fff" },
+        beginAtZero: false, // se ajusta al rango real
+      },
     },
   };
 
   return (
-    <Paper sx={{ p: 3 }}>
+    <Paper sx={{ p: 3, bgcolor: "#1e1e1e" }}>
       <Line data={chartData} options={options} />
     </Paper>
   );

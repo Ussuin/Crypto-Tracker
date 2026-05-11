@@ -128,6 +128,12 @@ dist
 # pnpm
 .pnpm-store
 
+# Node.js
+node_modules/
+
+# Entornos
+.env
+
 # yarn v3
 .pnp.*
 .yarn/*

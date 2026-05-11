@@ -2,73 +2,104 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../db");
 const axios = require("axios");
-require("dotenv").config();
+const coinList = require("../coinList");
 
-const symbolMap = {
-  BTC: "bitcoin",
-  ETH: "ethereum",
-  DOGE: "dogecoin",
-  LTC: "litecoin"
-};
-
-// Obtener historial
+// Historial completo desde DB
 router.get("/history", async (req, res) => {
   try {
-    const [rows] = await pool.query("SELECT * FROM history ORDER BY created_at DESC");
+    const [rows] = await pool.query(
+      "SELECT * FROM history ORDER BY created_at DESC"
+    );
     res.json(rows);
   } catch (err) {
-    console.error("Error en /history:", err);
-    res.status(500).json({
-      error: "Error al obtener historial",
-      details: err.code || err.message || "Problema interno en el servidor"
-    });
+    console.error(err);
+    res.status(500).json({ error: "Error al obtener historial" });
   }
 });
 
-// Consultar precio y guardar en DB
+// Precio actual + histórico 7d
 router.get("/prices/:symbol", async (req, res) => {
   let { symbol } = req.params;
-  symbol = symbol.toUpperCase();
+  symbol = symbol.trim().toUpperCase();
 
-  const apiSymbol = symbolMap[symbol];
-  if (!apiSymbol) {
-    return res.status(404).json({ error: "Símbolo no soportado" });
+  if (!coinList.includes(symbol)) {
+    return res.status(400).json({ error: `Moneda no soportada: ${symbol}` });
   }
 
   try {
-    const response = await axios.get(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${apiSymbol}&vs_currencies=usd`,
-      { timeout: 5000 }
+    // Datos 24h (precio actual, volumen, etc.)
+    const ticker = await axios.get(
+      `https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}USDT`
     );
 
-    const price = response.data[apiSymbol]?.usd;
-    if (!price) {
-      return res.status(502).json({ error: "CoinGecko no devolvió datos válidos" });
-    }
+    const price = parseFloat(ticker.data.lastPrice);
 
-    await pool.query(
-      "INSERT INTO history(symbol, price, created_at) VALUES (?, ?, NOW())",
-      [symbol, price]
+    // Histórico últimos 7 días (velas diarias)
+    const klines = await axios.get(
+      `https://api.binance.com/api/v3/klines?symbol=${symbol}USDT&interval=1d&limit=7`
     );
 
-    res.json({ symbol, price });
-  } catch (err) {
-    console.error("Error en /prices:", err);
+    const history = klines.data.map(candle => ({
+      date: new Date(candle[0]).toISOString().split("T")[0],
+      price: parseFloat(candle[4]) // precio de cierre
+    }));
 
-    if (err.code === "ECONNABORTED") {
-      return res.status(504).json({ error: "Timeout al consultar CoinGecko" });
-    }
-    if (err.response) {
-      return res.status(err.response.status).json({
-        error: "CoinGecko devolvió error",
-        details: err.response.data
-      });
+    // Verificar si ya existe la moneda en la tabla
+    const [existing] = await pool.query(
+      "SELECT id FROM history WHERE symbol = ? LIMIT 1",
+      [symbol]
+    );
+
+    if (existing.length > 0) {
+      // Si ya existe, actualiza sus datos
+      await pool.query(
+        "UPDATE history SET price=?, created_at=NOW(), high7d=?, low7d=?, volume=?, marketCap=? WHERE symbol=?",
+        [
+          price,
+          ticker.data.highPrice,
+          ticker.data.lowPrice,
+          ticker.data.volume,
+          ticker.data.quoteVolume,
+          symbol
+        ]
+      );
+    } else {
+      // Si no existe, inserta nueva fila
+      await pool.query(
+        "INSERT INTO history(symbol, price, created_at, high7d, low7d, volume, marketCap) VALUES (?, ?, NOW(), ?, ?, ?, ?)",
+        [
+          symbol,
+          price,
+          ticker.data.highPrice,
+          ticker.data.lowPrice,
+          ticker.data.volume,
+          ticker.data.quoteVolume
+        ]
+      );
+
+      // Limitar a 10 registros → borrar los más antiguos si hay más de 10
+      await pool.query(
+        "DELETE FROM history WHERE id NOT IN (SELECT id FROM (SELECT id FROM history ORDER BY created_at DESC LIMIT 10) as t)"
+      );
+
+      // Reiniciar contador AUTO_INCREMENT
+      await pool.query("ALTER TABLE history AUTO_INCREMENT = 1");
     }
 
-    res.status(500).json({
-      error: "Error al consultar precio",
-      details: err.message || "Problema interno en el servidor"
+    // Responder con todos los campos
+    res.json({
+      symbol,
+      price,
+      created_at: new Date().toISOString(),
+      high7d: ticker.data.highPrice,
+      low7d: ticker.data.lowPrice,
+      volume: ticker.data.volume,
+      marketCap: ticker.data.quoteVolume,
+      history
     });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al obtener precio" });
   }
 });
 
